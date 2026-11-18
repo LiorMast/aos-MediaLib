@@ -198,6 +198,44 @@ public class DatabaseMigrationTest {
     }
 
     @Test
+    public void testMigrationV63AddsWatchCountAndExposesItInTheVideoView() {
+        Context context = ApplicationProvider.getApplicationContext();
+        String dbName = "test_migration_v63.db";
+        context.deleteDatabase(dbName);
+        final String watchCount = VideoStore.Video.VideoColumns.ARCHOS_WATCH_COUNT;
+
+        VideoOpenHelper helper62 = new VideoOpenHelper(context, dbName, 62);
+        SQLiteDatabase db = helper62.getWritableDatabase();
+        db.execSQL("PRAGMA foreign_keys = OFF");
+        db.execSQL("INSERT INTO files (_id, remote_id, _data, title, date_added, media_type, volume_hidden, Archos_smbserver, Archos_lastTimePlayed) VALUES (1, 1, '/storage/usb/Played.mkv', 'Played', 1000, 3, 0, 0, 1234)");
+        db.execSQL("INSERT INTO files (_id, remote_id, _data, title, date_added, media_type, volume_hidden, Archos_smbserver, Archos_lastTimePlayed) VALUES (2, 2, '/storage/usb/Never.mkv', 'Never', 1000, 3, 0, 0, 0)");
+        assertFalse(columnExists(db, "files", watchCount));
+        assertFalse(columnExists(db, "video", watchCount));
+        db.close();
+
+        VideoOpenHelper helper63 = new VideoOpenHelper(context, dbName, 63);
+        SQLiteDatabase upgraded = helper63.getWritableDatabase();
+
+        assertEquals(63, upgraded.getVersion());
+        assertTrue(columnExists(upgraded, "files", watchCount));
+        assertTrue(columnExists(upgraded, "video", watchCount));
+        // the rows that existed read 0, and nothing else about them changed
+        assertEquals("0", querySingleString(upgraded, "SELECT " + watchCount + " FROM files WHERE _id = 1"));
+        assertEquals("0", querySingleString(upgraded, "SELECT " + watchCount + " FROM video WHERE _id = 2"));
+        assertEquals("1234", querySingleString(upgraded, "SELECT Archos_lastTimePlayed FROM video WHERE _id = 1"));
+        // a count written to the table is read through the view
+        upgraded.execSQL("UPDATE files SET " + watchCount + " = " + watchCount + " + 1 WHERE _id = 1");
+        upgraded.execSQL("UPDATE files SET " + watchCount + " = " + watchCount + " + 1 WHERE _id = 1");
+        assertEquals("2", querySingleString(upgraded, "SELECT " + watchCount + " FROM video WHERE _id = 1"));
+        assertEquals("ok", querySingleString(upgraded, "PRAGMA integrity_check"));
+        assertEquals(0, foreignKeyViolationCount(upgraded));
+        assertEquals(0, getWritableSchema(upgraded));
+
+        upgraded.close();
+        context.deleteDatabase(dbName);
+    }
+
+    @Test
     public void testMigrationV60AddsSortNameColumnsIndexesAndBackfills() {
         Context context = ApplicationProvider.getApplicationContext();
         String dbName = "test_migration_v60.db";
@@ -468,7 +506,11 @@ public class DatabaseMigrationTest {
         assertTrue(columnExists(db, "show", ScraperStore.Show.SPOKEN_LANGUAGES));
         assertTrue(columnExists(db, "show", ScraperStore.Show.TITLE_LANGUAGE));
         assertTrue(columnExists(db, "video", VideoStore.Video.VideoColumns.SCRAPER_TITLE_LANGUAGE));
+        assertTrue(columnExists(db, "files", VideoStore.Video.VideoColumns.ARCHOS_WATCH_COUNT));
+        assertTrue(columnExists(db, "video", VideoStore.Video.VideoColumns.ARCHOS_WATCH_COUNT));
         insertFile(db, 1, "/storage/usb/Fresh-movie.mkv");
+        assertEquals("0", querySingleString(db, "SELECT " +
+                VideoStore.Video.VideoColumns.ARCHOS_WATCH_COUNT + " FROM files WHERE _id = 1"));
         db.execSQL("INSERT INTO movie (_id, video_id, name_movie) VALUES (1, 1, 'Fresh movie')");
         assertEquals("und", querySingleString(db, "SELECT " +
                 ScraperStore.Movie.ORIGINAL_LANGUAGE + " FROM movie WHERE _id = 1"));

@@ -437,4 +437,40 @@ public class IndexHelper implements LoaderManager.LoaderCallbacks<Cursor>, Loade
             }
         });
     }
+
+    /**
+     * Counts one more watch of the video. It is queued behind the other playback writes, and adds to the
+     * stored count rather than writing one held in memory (writeVideoInfo does not carry the count), so
+     * no save can overwrite it.
+     */
+    public void incrementWatchCount(final long videoId) {
+        if (videoId < 0) return;
+        VIDEO_INFO_WRITER.execute(() -> {
+            try {
+                addToWatchCount(mContext, videoId, 1);
+            } catch (Exception e) {
+                log.error("incrementWatchCount failed", e);
+            }
+        });
+    }
+
+    /**
+     * @return the watch count of the video once delta was added to it, or -1 if the video is not in the
+     * library. Must run on the writer thread (or alone, in a test): it reads, then updates.
+     */
+    static int addToWatchCount(Context context, long videoId, int delta) {
+        final ContentResolver resolver = context.getContentResolver();
+        final String column = VideoStore.Video.VideoColumns.ARCHOS_WATCH_COUNT;
+        final String where = VideoStore.Video.VideoColumns._ID + " = " + videoId;
+        int count;
+        try (Cursor c = resolver.query(VideoStore.Video.Media.EXTERNAL_CONTENT_URI, new String[]{column}, where, null, null)) {
+            if (c == null || !c.moveToFirst()) return -1;
+            count = c.getInt(0); // 0 for a null
+        }
+        count = Math.max(0, count + delta);
+        ContentValues values = new ContentValues(1);
+        values.put(column, count);
+        resolver.update(VideoStore.Video.Media.EXTERNAL_CONTENT_URI, values, where, null);
+        return count;
+    }
 }

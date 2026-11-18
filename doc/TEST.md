@@ -93,12 +93,40 @@ Class command:
 - `com.archos.mediaprovider.video.DatabaseMigrationTest.testMigrationV51RebuildsArtworkTablesAndRestoresVideoView`
 - `com.archos.mediaprovider.video.DatabaseMigrationTest.testFreshCreateCurrentSchema`
 - `com.archos.mediaprovider.video.DatabaseMigrationTest.testMigrationV55`
+- `com.archos.mediaprovider.video.DatabaseMigrationTest.testMigrationV63AddsWatchCountAndExposesItInTheVideoView`
+
+The v63 test builds a populated v62 database and checks that `Archos_watchCount`
+is added to `files` (existing rows read 0, other columns unchanged), that the
+recreated `video` view exposes it and shows a count written to the table, and
+that integrity, foreign keys and `writable_schema` are fine afterwards.
+`testFreshCreateCurrentSchema` also asserts the column on a fresh database, and
+`testUpgradeFromEverySupportedVersion` covers 62 → 63 like every other step.
 
 These tests use Robolectric's SQLite implementation. They verify migration
 structure and resulting schemas, but they do not reproduce every SQLite version
 shipped by old Android releases. Migration changes must also be validated on a
 representative old Android device when compatibility behavior is involved. See
 `doc/DATABASE_UPDATE.md` for the complete migration procedure.
+
+### Watch count writes
+
+Class command:
+
+```bash
+./gradlew --offline :MediaLib:testDebugUnitTest \
+  --tests 'com.archos.mediacenter.utils.videodb.IndexHelperWatchCountTest'
+```
+
+- `com.archos.mediacenter.utils.videodb.IndexHelperWatchCountTest.addsOneToTheStoredCount`
+- `com.archos.mediacenter.utils.videodb.IndexHelperWatchCountTest.aNullCountIsZero`
+- `com.archos.mediacenter.utils.videodb.IndexHelperWatchCountTest.theCountNeverGoesBelowZero`
+- `com.archos.mediacenter.utils.videodb.IndexHelperWatchCountTest.aVideoNotInTheLibraryIsLeftAlone`
+
+These tests run `IndexHelper.addToWatchCount` (what `incrementWatchCount` queues
+on the playback writer thread) against a mocked `ContentResolver`: the stored
+count is read and written back with the delta added, a null counts as 0, and a
+video that is not in the library is left alone. When the count is due is decided
+in the Video module (`WatchCountTrackerTest`).
 
 ### Network scanner service
 
@@ -239,7 +267,8 @@ results. Review the CSV when changing scraper matching behavior.
 
 - Any MediaLib change: run the full suite.
 - Database or provider change: run `DatabaseMigrationTest`, `DbHolderTest`, and
-  `VideoProviderTransactionTest` before the full suite.
+  `VideoProviderTransactionTest` before the full suite. A change to the columns
+  written while playing (`IndexHelper`) also runs `IndexHelperWatchCountTest`.
 - Network scanner or auto-scrape change: run `NetworkScannerServiceVideoTest`,
   `AutoScrapeServiceNetworkScanTest`, and the auto-scrape persistence classes
   before the full suite.

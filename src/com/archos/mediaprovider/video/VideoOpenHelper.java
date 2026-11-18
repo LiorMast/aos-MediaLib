@@ -47,7 +47,7 @@ public class VideoOpenHelper extends DeleteOnDowngradeSQLiteOpenHelper {
     // that is what onCreate creates
     private static final int DATABASE_CREATE_VERSION = 36; // initial version for v1.0 of nova (archos was 10)
     // that is the current version
-    private static final int DATABASE_VERSION = 62;
+    private static final int DATABASE_VERSION = 63;
     private static final String DATABASE_NAME = "media.db";
 
     // (Integer.MAX_VALUE / 2) rounded to human readable form
@@ -1561,6 +1561,22 @@ public class VideoOpenHelper extends DeleteOnDowngradeSQLiteOpenHelper {
         return view;
     }
 
+    // Expose the watch count of v63 through the common video view, next to the last time played.
+    // Guarded like v62: the anchor must be found exactly once.
+    private static final String CREATE_VIDEO_VIEW_V63 = createVideoViewV63();
+
+    private static String createVideoViewV63() {
+        final String anchor = "    Archos_lastTimePlayed,\n";
+        final String view = CREATE_VIDEO_VIEW_V62.replace(anchor, anchor +
+                "    " + VideoColumns.ARCHOS_WATCH_COUNT + ",\n");
+        final int found = (CREATE_VIDEO_VIEW_V62.length() - CREATE_VIDEO_VIEW_V62.replace(anchor, "").length()) / anchor.length();
+        if (found != 1) {
+            throw new IllegalStateException(
+                    "Video view v63 anchor found " + found + " times; the watch count column would be missing or duplicated");
+        }
+        return view;
+    }
+
     // ------------- ---##[ Video Thumbnails     ]## ---------------------------
     public static final String VIDEOTHUMBNAIL_TABLE_NAME = "videothumbnails";
     private static final String CREATE_VIDEOTHUMBNAIL_TABLE =
@@ -2007,6 +2023,13 @@ public class VideoOpenHelper extends DeleteOnDowngradeSQLiteOpenHelper {
             ScraperTables.upgradeTo(db, 62);
             ScraperTables.backfillGenreIds(db, mContext);
             db.execSQL(CREATE_VIDEO_VIEW_V62);
+        }
+        if (oldVersion < 63 && newVersion >= 63) {
+            if (log.isDebugEnabled()) log.debug("onUpgrade: {} - adding watch count", 63);
+            db.execSQL("ALTER TABLE " + FILES_TABLE_NAME + " ADD COLUMN " + VideoColumns.ARCHOS_WATCH_COUNT
+                    + " INTEGER DEFAULT ( 0 )");
+            SQLiteUtils.dropView(db, VIDEO_VIEW_NAME);
+            db.execSQL(CREATE_VIDEO_VIEW_V63);
         }
     }
 

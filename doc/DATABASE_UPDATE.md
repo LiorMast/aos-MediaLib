@@ -466,3 +466,35 @@ exposes the result as `scraper_title_language`.
 - [ ] App compiles (`compileNoamazonDebugJavaWithJavac`).
 - [ ] Trigger/view/rebuild changes validated on target devices with both cleared
       storage and an upgraded field database (Robolectric is not sufficient).
+
+## 10. Version 63: watch count
+
+Version 63 adds `Archos_watchCount INTEGER DEFAULT ( 0 )` to `files`, the number
+of times a video was watched. It is a plain `ALTER TABLE ... ADD COLUMN`; rows
+that existed read 0. The `video` view is recreated (`CREATE_VIDEO_VIEW_V63`) to
+expose the column next to `Archos_lastTimePlayed`. `createVideoViewV63()` throws
+if its anchor is not found exactly once, because `String.replace` would
+otherwise leave the column out of the view without any error.
+
+- The count is written only by the player: `IndexHelper.incrementWatchCount`
+  reads the stored value and writes it back plus one, on the same single writer
+  thread as `writeVideoInfo`. `writeVideoInfo` and `VideoDbInfo` do not carry the
+  count, so a periodic save of the playback state can never overwrite it.
+- What counts as a watch is decided by `WatchCountTracker` in the Video module:
+  more than a minute actually played, or 90% of a video of a minute or less;
+  once per playback, never in Private Mode. An external player only reports
+  whether the video finished, and counts then.
+- Sorting by the count (`ORDER BY IFNULL(Archos_watchCount, 0) ...`) works on any
+  query of the `video` view.
+- `MediaLibraryBackupService.importMediaLibrary` accepts a backup only when its
+  database version equals `getDatabaseVersion()` exactly. As with every bump of
+  `DATABASE_VERSION`, a backup made at version 62 can no longer be restored into
+  a build at version 63 (and one made at 63 not into an older build). The
+  library itself upgrades in place when the new build is installed over the old
+  one, so take a new backup after upgrading.
+
+Tests: `DatabaseMigrationTest.testMigrationV63AddsWatchCountAndExposesItInTheVideoView`,
+`testFreshCreateCurrentSchema`, `testUpgradeFromEverySupportedVersion` and
+`IndexHelperWatchCountTest` (see `doc/TEST.md`). As for any step that recreates a
+view, check it on a device too, with cleared storage and over an upgraded
+database.

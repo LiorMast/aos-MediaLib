@@ -916,6 +916,13 @@ public final class VideoStore {
             public static final String ARCHOS_LAST_TIME_PLAYED = "Archos_lastTimePlayed";
 
             /**
+             * Private archos counter of how many times a media was watched (see WatchCountTracker in the
+             * video module for what counts as a watch). 0 for a media never watched.
+             * <P>Type: INTEGER</P>
+             */
+            public static final String ARCHOS_WATCH_COUNT = "Archos_watchCount";
+
+            /**
              * Private archos flag to store data needed by the Avos video player
              * <P>Type: INTEGER</P>
              */
